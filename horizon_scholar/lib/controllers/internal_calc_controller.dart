@@ -179,8 +179,11 @@ class InternalCalcController extends GetxController {
       markList.add(mark);
     }
 
+    markList.refresh(); // 🔥 CRITICAL
+
     await calculateInternalGpa(semester, internalNo);
   }
+
 
   // --------------------------------------------------
   // GPA Calculation
@@ -264,6 +267,7 @@ class InternalCalcController extends GetxController {
       if (existing != null) {
         await existing.delete();
         gpas.remove(existing);
+        gpas.refresh();
       }
 
       return;
@@ -279,6 +283,7 @@ class InternalCalcController extends GetxController {
     if (existing != null) {
       existing.gpa = gpa;
       await existing.save();
+      gpas.refresh();
     } else {
       final gpaModel = InternalGpaModel(
         semester: semester,
@@ -290,4 +295,47 @@ class InternalCalcController extends GetxController {
       gpas.add(gpaModel);
     }
   }
+  Future<void> deleteInternal({
+    required int semester,
+    required int internalNo,
+  }) async {
+    // 1️⃣ Delete Internal model
+    final internal = internals.firstWhereOrNull(
+      (i) => i.semester == semester && i.internalNo == internalNo,
+    );
+
+    if (internal != null) {
+      await internal.delete();
+      internals.remove(internal);
+    }
+
+    // 2️⃣ Delete related marks
+    final marksToDelete = markList
+        .where((m) =>
+            m.semester == semester &&
+            m.internalNo == internalNo)
+        .toList();
+
+    for (final m in marksToDelete) {
+      await m.delete();
+    }
+    markList.removeWhere(
+      (m) =>
+          m.semester == semester &&
+          m.internalNo == internalNo,
+    );
+    markList.refresh();
+
+    // 3️⃣ Delete GPA
+    final gpa = gpas.firstWhereOrNull(
+      (g) => g.semester == semester && g.internalNo == internalNo,
+    );
+
+    if (gpa != null) {
+      await gpa.delete();
+      gpas.remove(gpa);
+      gpas.refresh();
+    }
+  }
+
 }

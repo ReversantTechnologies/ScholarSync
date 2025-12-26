@@ -161,6 +161,19 @@ class CgpaCalcController extends GetxController {
     await recalculateAll();
   }
 
+  bool subjectExists({
+    required String code,
+    required int semester,
+  }) {
+    return subjects.any(
+      (s) =>
+          s.code.trim().toLowerCase() ==
+          code.trim().toLowerCase() &&
+          s.semester == semester,
+    );
+  }
+
+
   /// Add subject for a semester from a template (template has semester = 0)
   Future<void> addSubjectFromTemplate(
     SubjectModel template,

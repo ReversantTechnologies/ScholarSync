@@ -1,6 +1,8 @@
 import 'dart:async'; // Added for Debouncer
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:flutter/services.dart';
+
 
 // Assuming these exist based on your upload
 import '../../controllers/cgpa_calc_controller.dart';
@@ -324,22 +326,58 @@ class _CalculateInternalScreenState extends State<CalculateInternalScreen> {
                     final isSelected = i.internalNo == selectedInternalNo;
                     return Padding(
                       padding: const EdgeInsets.only(right: 8),
-                      child: ChoiceChip(
-                        label: Text(i.name),
-                        selected: isSelected,
-                        showCheckmark: false,
-                        selectedColor: palette.secondary,
-                        backgroundColor: palette.black.withAlpha(20),
-                        labelStyle: TextStyle(
-                          color: isSelected ? palette.primary : palette.black,
-                        ),
-                        onSelected: (_) {
-                          setState(() {
-                            selectedInternalNo = i.internalNo;
-                          });
-                        },
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          ChoiceChip(
+                            label: Text(
+                              i.name,
+                              style: TextStyle(
+                                color: isSelected ? palette.primary : palette.black,
+                              ),
+                            ),
+                            selected: isSelected,
+                            showCheckmark: false,
+                            selectedColor: palette.secondary,
+                            backgroundColor: palette.black.withAlpha(20),
+                            onSelected: (_) {
+                              setState(() {
+                                selectedInternalNo = i.internalNo;
+                              });
+                            },
+                          ),
+
+                          // ❌ DELETE ICON OUTSIDE CHIP
+                          if (i.internalNo > 2) ...[
+                            const SizedBox(width: 4),
+                            
+                              GestureDetector(
+                                onTap: () => _confirmDeleteInternal(
+                                  context,
+                                  i.semester,
+                                  i.internalNo,
+                                ),
+                                child: Container(
+                                  padding: EdgeInsets.all(5),
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: palette.error.withAlpha(30),
+                                  ),
+                                  child: Icon(
+                                    Icons.close,
+                                    size: 18,
+                                    color: palette.error,
+                                  ),
+                                )
+                            )
+                            
+                          ],
+                        ],
                       ),
                     );
+
+
+
                   }).toList(),
                 );
               }),
@@ -366,6 +404,68 @@ class _CalculateInternalScreenState extends State<CalculateInternalScreen> {
       ),
     );
   }
+
+  void _confirmDeleteInternal(
+    BuildContext context,
+    int semester,
+    int internalNo,
+  ) {
+    final palette = themeController.palette;
+
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: palette.bg,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        title: Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: palette.error),
+            const SizedBox(width: 8),
+            const Text(
+              "Delete Internal?",
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ],
+        ),
+        content: const Text(
+          "This will delete:\n\n"
+          "• Internal exam\n"
+          "• All its marks\n"
+          "• Its GPA\n\n"
+          "This action cannot be undone.",
+          style: TextStyle(fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: palette.error,
+            ),
+            onPressed: () async {
+              Navigator.pop(context);
+
+              await internalCtrl.deleteInternal(
+                semester: semester,
+                internalNo: internalNo,
+              );
+
+              // 🔁 Reset selection safely
+              setState(() {
+                selectedInternalNo = 1;
+              });
+            },
+            child: const Text("Delete"),
+          ),
+        ],
+      ),
+    );
+  }
+
 
   // ------------------- POPUPS & DIALOGS -------------------
 
@@ -474,6 +574,10 @@ class _CalculateInternalScreenState extends State<CalculateInternalScreen> {
                         itemBuilder: (_, index) {
                           final subject = filtered[index];
                           final displayCode = subject.code.isEmpty ? "No Code" : subject.code;
+                          final alreadyAdded = calcController.subjectExists(
+                            code: subject.code,
+                            semester: semester,
+                          );
 
                           return Card(
                             color: palette.accent,
@@ -481,29 +585,34 @@ class _CalculateInternalScreenState extends State<CalculateInternalScreen> {
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: ListTile(
+                              enabled: !alreadyAdded,
                               title: Text(
                                 "$displayCode - ${subject.name}",
-                                style: const TextStyle(fontWeight: FontWeight.w600),
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  color: alreadyAdded
+                                      ? palette.black.withAlpha(120)
+                                      : palette.black,
+                                ),
                               ),
                               subtitle: Text(
-                                "${subject.credits.toStringAsFixed(1)} credits",
+                                alreadyAdded
+                                    ? "Already added to this semester"
+                                    : "${subject.credits.toStringAsFixed(1)} credits",
                                 style: const TextStyle(fontSize: 12),
                               ),
-                              onTap: () async {
-                                if (subject.code.trim().isEmpty) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text("This template has no course code. Please edit/add it manually."),
-                                    ),
-                                  );
-                                  return;
-                                }
-                                // Show loading indicator logic could be added here
-                                await calcController.addSubjectFromTemplate(subject, semester);
-                                await calcController.recalculateAll();
-                                if (context.mounted) Navigator.of(ctx).pop();
-                              },
-                            ),
+                              trailing: alreadyAdded
+                                  ? const Icon(Icons.check_circle, color: Colors.green)
+                                  : null,
+                              onTap: alreadyAdded
+                                  ? null
+                                  : () async {
+                                      await calcController.addSubjectFromTemplate(subject, semester);
+                                      await calcController.recalculateAll();
+                                      if (context.mounted) Navigator.of(ctx).pop();
+                                    },
+                            )
+
                           );
                         },
                       );
@@ -670,6 +779,11 @@ class _CalculateInternalScreenState extends State<CalculateInternalScreen> {
                           // Use Obx only if checking logic is complex, 
                           // but here we are inside a parent Obx, so it's fine.
                           final isSelected = selectedCodes.contains(code);
+                          final alreadyAdded = calcController.subjectExists(
+                            code: subject.code,
+                            semester: semester,
+                          );
+
 
                           return Card(
                             color: palette.accent,
@@ -678,23 +792,32 @@ class _CalculateInternalScreenState extends State<CalculateInternalScreen> {
                             ),
                             child: CheckboxListTile(
                               value: isSelected,
-                              onChanged: (val) {
-                                if (val == true) {
-                                  if (!selectedCodes.contains(code)) selectedCodes.add(code);
-                                } else {
-                                  selectedCodes.remove(code);
-                                }
-                              },
+                              onChanged: alreadyAdded
+                                  ? null
+                                  : (val) {
+                                      if (val == true) {
+                                        selectedCodes.add(code);
+                                      } else {
+                                        selectedCodes.remove(code);
+                                      }
+                                    },
                               title: Text(
                                 "${subject.code} - ${subject.name}",
-                                style: const TextStyle(fontWeight: FontWeight.w600),
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  color: alreadyAdded
+                                      ? palette.black.withAlpha(120)
+                                      : palette.black,
+                                ),
                               ),
                               subtitle: Text(
-                                "${subject.credits.toStringAsFixed(1)} credits",
+                                alreadyAdded
+                                    ? "Already added"
+                                    : "${subject.credits.toStringAsFixed(1)} credits",
                                 style: const TextStyle(fontSize: 12),
                               ),
-                              controlAffinity: ListTileControlAffinity.leading,
-                            ),
+                            )
+
                           );
                         },
                       );
@@ -769,6 +892,7 @@ class _CalculateInternalScreenState extends State<CalculateInternalScreen> {
   // and "Add Internal" remain largely the same, just keeping them concise.
   void _showAddSubjectOptions(BuildContext context, int semester) {
     final palette = themeController.palette;
+
     showModalBottomSheet(
       context: context,
       backgroundColor: palette.bg,
@@ -825,6 +949,7 @@ class _CalculateInternalScreenState extends State<CalculateInternalScreen> {
     final codeCtrl = TextEditingController();
     final creditsCtrl = TextEditingController();
     final palette = themeController.palette;
+    final isDuplicate = false.obs;
 
     showDialog(
       context: context,
@@ -847,7 +972,27 @@ class _CalculateInternalScreenState extends State<CalculateInternalScreen> {
                     ],
                   ),
                   const SizedBox(height: 10),
-                  _buildDialogTextField(codeCtrl, "Subject Code", Icons.qr_code_2, palette),
+                  TextField(
+                    controller: codeCtrl,
+                    onChanged: (val) {
+                      isDuplicate.value = calcController.subjectExists(
+                        code: val,
+                        semester: semester,
+                      );
+                    },
+                    decoration: InputDecoration(
+                      labelText: "Subject Code",
+                      errorText: isDuplicate.value ? "Subject already exists" : null,
+                      prefixIcon: const Icon(Icons.qr_code_2),
+                      filled: true,
+                      fillColor: palette.accent,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+
                   const SizedBox(height: 10),
                   _buildDialogTextField(nameCtrl, "Subject Name", Icons.menu_book_outlined, palette),
                   const SizedBox(height: 10),
@@ -861,30 +1006,39 @@ class _CalculateInternalScreenState extends State<CalculateInternalScreen> {
                         child: Text("Cancel", style: TextStyle(color: palette.primary)),
                       ),
                       const SizedBox(width: 8),
-                      ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: palette.primary,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                        onPressed: () async {
-                          final name = nameCtrl.text.trim();
-                          final code = codeCtrl.text.trim();
-                          final creditsStr = creditsCtrl.text.trim();
-                          if (name.isEmpty || code.isEmpty || creditsStr.isEmpty) return;
-                          
-                          final credits = double.tryParse(creditsStr) ?? 0;
-                          if (credits <= 0) return;
+                      Obx(() {
+                        return ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: isDuplicate.value
+                                ? palette.black.withAlpha(150)
+                                : palette.primary,
+                          ),
+                          onPressed: isDuplicate.value
+                              ? null
+                              : () async {
+                                  final name = nameCtrl.text.trim();
+                                  final code = codeCtrl.text.trim();
+                                  final creditsStr = creditsCtrl.text.trim();
 
-                          await calcController.addSubject(
-                            name: name, code: code, credits: credits, semester: semester, grade: "O"
-                          );
-                          if(context.mounted) Navigator.of(ctx).pop();
-                        },
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  if (name.isEmpty || code.isEmpty || creditsStr.isEmpty) return;
+
+                                  final credits = double.tryParse(creditsStr) ?? 0;
+                                  if (credits <= 0) return;
+
+                                  await calcController.addSubject(
+                                    name: name,
+                                    code: code,
+                                    credits: credits,
+                                    semester: semester,
+                                    grade: "O",
+                                  );
+
+                                  if (context.mounted) Navigator.of(ctx).pop();
+                                },
                           child: Text("Save", style: TextStyle(color: palette.accent)),
-                        ),
-                      ),
+                        );
+                      })
+
                     ],
                   ),
                 ],
@@ -992,23 +1146,86 @@ class _SubjectListSection extends StatelessWidget {
     });
   }
 }
-
-class _InternalSubjectTile extends StatelessWidget {
+class _InternalSubjectTile extends StatefulWidget {
   final SubjectModel subject;
   final int semester;
   final int internalNo;
 
-  _InternalSubjectTile({
-    super.key, // Added Key
+  const _InternalSubjectTile({
+    super.key,
     required this.subject,
     required this.semester,
     required this.internalNo,
   });
 
-  final InternalCalcController ctrl = Get.find<InternalCalcController>();
+  @override
+  State<_InternalSubjectTile> createState() => _InternalSubjectTileState();
+}
+
+class _InternalSubjectTileState extends State<_InternalSubjectTile> {
+  final InternalCalcController internalCtrl = Get.find<InternalCalcController>();
   final CgpaCalcController cgpaCtrl = Get.find<CgpaCalcController>();
   final ThemeController themeController = Get.find<ThemeController>();
-  
+
+  late TextEditingController markCtrl;
+  Timer? _debounce;
+
+  @override
+  void initState() {
+    super.initState();
+
+    final existing = internalCtrl.markList.firstWhereOrNull(
+      (m) =>
+          m.semester == widget.semester &&
+          m.internalNo == widget.internalNo &&
+          m.subjectCode == widget.subject.code,
+    );
+
+    markCtrl = TextEditingController(
+      text: existing?.marks.toStringAsFixed(0) ?? '',
+    );
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    markCtrl.dispose();
+    super.dispose();
+  }
+
+  // ---------------- MARK UPDATE LOGIC ----------------
+
+  void _onMarkChanged(String val) {
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+
+    _debounce = Timer(const Duration(milliseconds: 400), () async {
+      double obtained = double.tryParse(val) ?? 0;
+
+      // 🔒 SAFETY CLAMP
+      if (obtained > 100) obtained = 100;
+      if (obtained < 0) obtained = 0;
+
+      // 1️⃣ Save / update mark
+      await internalCtrl.addOrUpdateMark(
+        semester: widget.semester,
+        internalNo: widget.internalNo,
+        subject: widget.subject,
+        obtainedMarks: obtained,
+        maxMarks: 100,
+      );
+
+      // 2️⃣ Recalculate INTERNAL GPA
+      await internalCtrl.calculateInternalGpa(
+        widget.semester,
+        widget.internalNo,
+      );
+
+      // 3️⃣ Recalculate CGPA
+      await cgpaCtrl.recalculateAll();
+    });
+  }
+
+  // ---------------- DELETE CONFIRM ----------------
 
   void _confirmDelete(BuildContext context) {
     final palette = themeController.palette;
@@ -1016,13 +1233,21 @@ class _InternalSubjectTile extends StatelessWidget {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text("Delete Subject"),
+        backgroundColor: palette.bg,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: palette.error),
+            const SizedBox(width: 8),
+            const Text("Delete Subject?", style: TextStyle(fontWeight: FontWeight.w700)),
+          ],
+        ),
         content: const Text(
-          "This will remove the subject from:\n"
-          "• Internal marks\n"
-          "• GPA calculation\n"
-          "• CGPA calculation\n\n"
-          "Are you sure?",
+          "This subject will be removed from:\n\n"
+          "• CGPA calculation\n"
+          "• Internal marks\n\n"
+          "This action cannot be undone.",
+          style: TextStyle(fontSize: 13),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
@@ -1030,10 +1255,7 @@ class _InternalSubjectTile extends StatelessWidget {
             style: ElevatedButton.styleFrom(backgroundColor: palette.error),
             onPressed: () async {
               Navigator.pop(context);
-              await cgpaCtrl.removeSubjectAndCleanup(subject);
-              if(context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Subject deleted successfully")));
-              }
+              await cgpaCtrl.removeSubjectAndCleanup(widget.subject);
             },
             child: const Text("Delete"),
           ),
@@ -1042,28 +1264,11 @@ class _InternalSubjectTile extends StatelessWidget {
     );
   }
 
+  // ---------------- UI ----------------
+
   @override
   Widget build(BuildContext context) {
-    // Optimization: Don't fetch palette inside build repeatedly if passed, 
-    // but fetching from Get.find is cheap enough.
     final palette = themeController.palette;
-
-    // We keep this bit of logic inside build because it depends on specific item state
-    // but we avoid wrapping the whole tile in Obx. 
-    // We only wrap the Marks part if we want live updates from other sources, 
-    // but usually user input drives this, so standard TextField is fine.
-    
-    // Check for existing marks
-    // OPTIMIZATION: marksList searching can be slow if list is huge. 
-    // Ideally, pass a Map or specific Mark object. 
-    // Assuming list isn't massive (internals usually < 100 entries).
-    final existing = ctrl.markList.firstWhereOrNull(
-      (m) => m.semester == semester && m.internalNo == internalNo && m.subjectCode == subject.code,
-    );
-
-    final TextEditingController markCtrl = TextEditingController(
-      text: existing?.marks.toStringAsFixed(0) ?? '',
-    );
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -1081,54 +1286,62 @@ class _InternalSubjectTile extends StatelessWidget {
       ),
       child: Row(
         children: [
+          // ---- SUBJECT INFO ----
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  subject.code.isNotEmpty ? "${subject.code} - ${subject.name}" : subject.name,
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                  widget.subject.code.isNotEmpty
+                      ? "${widget.subject.code} - ${widget.subject.name}"
+                      : widget.subject.name,
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  "${subject.credits.toStringAsFixed(1)} credits",
+                  "${widget.subject.credits.toStringAsFixed(1)} credits",
                   style: TextStyle(fontSize: 11, color: palette.black.withAlpha(150)),
                 ),
               ],
             ),
           ),
-          const SizedBox(width: 10),
+
+          // ---- MARK INPUT ----
           SizedBox(
             width: 80,
             child: TextField(
               controller: markCtrl,
               keyboardType: TextInputType.number,
               textAlign: TextAlign.center,
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(3),
+                TextInputFormatter.withFunction((oldValue, newValue) {
+                  if (newValue.text.isEmpty) return newValue;
+                  final v = int.tryParse(newValue.text) ?? 0;
+                  return v <= 100 ? newValue : oldValue;
+                }),
+              ],
               decoration: InputDecoration(
                 hintText: "Marks",
                 filled: true,
                 fillColor: palette.bg.withAlpha(150),
                 contentPadding: const EdgeInsets.symmetric(vertical: 8),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide.none,
+                ),
               ),
-              onSubmitted: (val) {
-                final obtained = double.tryParse(val) ?? 0;
-                ctrl.addOrUpdateMark(
-                  semester: semester,
-                  internalNo: internalNo,
-                  subject: subject,
-                  obtainedMarks: obtained,
-                  maxMarks: 100,
-                );
-                // No focus unfocus here to allow quick entry of next subject
-                // FocusScope.of(context).unfocus(); 
-              },
+              onChanged: _onMarkChanged,
             ),
           ),
+
           const SizedBox(width: 6),
+
+          // ---- DELETE ----
           IconButton(
             tooltip: "Delete subject",
-            icon: Icon(Icons.delete_outline, color: palette.error, size: 22),
+            icon: Icon(Icons.delete_outline, color: palette.error),
             onPressed: () => _confirmDelete(context),
           ),
         ],

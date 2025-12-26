@@ -322,11 +322,15 @@ class _CalculateCgpaScreenState extends State<CalculateCgpaScreen> {
                                       size: 20,
                                       color: palette.error,
                                     ),
-                                    onPressed: () async {
-                                      await calcController
-                                          .removeSubjectAndCleanup(subject);
+                                    onPressed: () {
+                                      _showDeleteConfirmation(
+                                        context,
+                                        subject,
+                                        palette,
+                                      );
                                     },
                                   ),
+
                                 ],
                               ),
                             );
@@ -338,6 +342,77 @@ class _CalculateCgpaScreenState extends State<CalculateCgpaScreen> {
           );
         }),
       ),
+    );
+  }
+
+  void _showDeleteConfirmation(
+    BuildContext context,
+    SubjectModel subject,
+    palette,
+  ) {
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          backgroundColor: palette.bg,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, color: palette.error),
+              const SizedBox(width: 8),
+              const Text(
+                "Delete Subject?",
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ],
+          ),
+          content: Text(
+            "This subject will be removed from:\n\n"
+            "• CGPA calculation\n"
+            "• Internal marks page\n\n"
+            "This action cannot be undone.",
+            style: TextStyle(fontSize: 13, color: palette.black),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: Text(
+                "Cancel",
+                style: TextStyle(color: palette.primary),
+              ),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: palette.error,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              onPressed: () async {
+                Navigator.of(ctx).pop(); // close dialog
+
+                await calcController.removeSubjectAndCleanup(subject);
+
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        "${subject.name} removed from CGPA & Internal Marks",
+                      ),
+                    ),
+                  );
+                }
+              },
+              child: const Text(
+                "Delete",
+                style: TextStyle(color: Colors.white),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -440,6 +515,11 @@ class _CalculateCgpaScreenState extends State<CalculateCgpaScreen> {
                         itemCount: filteredSubjects.length,
                         itemBuilder: (_, index) {
                           final subject = filteredSubjects[index];
+                          final alreadyAdded = calcController.subjectExists(
+                            code: subject.code,
+                            semester: semester,
+                          );
+
 
                           final displayCode = subject.code.isEmpty
                               ? "No Code"
@@ -451,36 +531,35 @@ class _CalculateCgpaScreenState extends State<CalculateCgpaScreen> {
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: ListTile(
-                              title: Text(
-                                "$displayCode - ${subject.name}",
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
+                                enabled: !alreadyAdded,
+                                title: Text(
+                                  "$displayCode - ${subject.name}",
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    color: alreadyAdded ? palette.black.withAlpha(120) : palette.black,
+                                  ),
                                 ),
-                              ),
-                              subtitle: Text(
-                                "${subject.credits.toStringAsFixed(1)} credits",
-                                style: const TextStyle(fontSize: 12),
-                              ),
-                              onTap: () async {
-                                if (subject.code.trim().isEmpty) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text(
-                                        "This template has no course code. Please edit/add it manually.",
-                                      ),
-                                    ),
-                                  );
-                                  return;
-                                }
+                                subtitle: Text(
+                                  alreadyAdded
+                                      ? "Already added to this semester"
+                                      : "${subject.credits.toStringAsFixed(1)} credits",
+                                  style: TextStyle(fontSize: 12),
+                                ),
+                                trailing: alreadyAdded
+                                    ? const Icon(Icons.check_circle, color: Colors.green)
+                                    : null,
+                                onTap: alreadyAdded
+                                    ? null
+                                    : () async {
+                                        await calcController.addSubjectFromTemplate(
+                                          subject,
+                                          semester,
+                                        );
+                                        await calcController.recalculateAll();
+                                        if (context.mounted) Navigator.of(ctx).pop();
+                                      },
+                              )
 
-                                await calcController.addSubjectFromTemplate(
-                                  subject,
-                                  semester,
-                                );
-                                await calcController.recalculateAll();
-                                if (context.mounted) Navigator.of(ctx).pop();
-                              },
-                            ),
                           );
                         },
                       );
@@ -693,6 +772,11 @@ class _CalculateCgpaScreenState extends State<CalculateCgpaScreen> {
                         itemBuilder: (_, index) {
                           final subject = filteredSubjects[index];
                           final code = subject.code;
+                          final alreadyAdded = calcController.subjectExists(
+                            code: subject.code,
+                            semester: semester,
+                          );
+
 
                           return Card(
                             color: palette.accent,
@@ -701,27 +785,31 @@ class _CalculateCgpaScreenState extends State<CalculateCgpaScreen> {
                             ),
                             // Optimization: Only this specific tile rebuilds when ticked
                             child: Obx(() {
-                              final isSelected = selectedCodes.contains(code);
+                              //final isSelected = selectedCodes.contains(code);
                               return CheckboxListTile(
-                                value: isSelected,
-                                onChanged: (val) {
-                                  if (val == true) {
-                                    selectedCodes.add(code);
-                                  } else {
-                                    selectedCodes.remove(code);
-                                  }
-                                },
+                                value: selectedCodes.contains(code),
+                                onChanged: alreadyAdded
+                                    ? null
+                                    : (val) {
+                                        if (val == true) {
+                                          selectedCodes.add(code);
+                                        } else {
+                                          selectedCodes.remove(code);
+                                        }
+                                      },
                                 title: Text(
                                   "${subject.code} - ${subject.name}",
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontWeight: FontWeight.w600,
+                                    color: alreadyAdded ? palette.black.withAlpha(120) : palette.black,
                                   ),
                                 ),
                                 subtitle: Text(
-                                  "${subject.credits.toStringAsFixed(1)} credits",
-                                  style: TextStyle(fontSize: 12, color: palette.black),
+                                  alreadyAdded
+                                      ? "Already added"
+                                      : "${subject.credits.toStringAsFixed(1)} credits",
+                                  style: TextStyle(fontSize: 12),
                                 ),
-                                controlAffinity: ListTileControlAffinity.leading,
                               );
                             }),
                           );
@@ -876,6 +964,8 @@ class _CalculateCgpaScreenState extends State<CalculateCgpaScreen> {
     final codeCtrl = TextEditingController();
     final creditsCtrl = TextEditingController();
     final palette = themeController.palette;
+    final isDuplicate = false.obs;
+
     showDialog(
       context: context,
       builder: (ctx) {
@@ -913,9 +1003,15 @@ class _CalculateCgpaScreenState extends State<CalculateCgpaScreen> {
                   // Subject code
                   TextField(
                     controller: codeCtrl,
+                    onChanged: (val) {
+                      isDuplicate.value = calcController.subjectExists(
+                        code: val,
+                        semester: semester,
+                      );
+                    },
                     decoration: InputDecoration(
                       labelText: "Subject Code",
-                      floatingLabelBehavior: FloatingLabelBehavior.never,
+                      errorText: isDuplicate.value ? "Subject already exists" : null,
                       prefixIcon: const Icon(Icons.qr_code_2),
                       filled: true,
                       fillColor: palette.accent,
@@ -925,6 +1021,7 @@ class _CalculateCgpaScreenState extends State<CalculateCgpaScreen> {
                       ),
                     ),
                   ),
+
                   const SizedBox(height: 10),
 
                   // Subject name
@@ -975,63 +1072,69 @@ class _CalculateCgpaScreenState extends State<CalculateCgpaScreen> {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: palette.primary,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+                      Obx((){
+                        return ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: isDuplicate.value
+                              ? palette.black.withAlpha(150)
+                              : palette.primary,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
                           ),
-                        ),
-                        onPressed: () async {
-                          final name = nameCtrl.text.trim();
-                          final code = codeCtrl.text.trim();
-                          final creditsStr = creditsCtrl.text.trim();
-                          final grade = "O";
+                          onPressed: isDuplicate.value
+                            ? null: () async {
+                            final name = nameCtrl.text.trim();
+                            final code = codeCtrl.text.trim();
+                            final creditsStr = creditsCtrl.text.trim();
+                            final grade = "O";
 
-                          if (name.isEmpty ||
-                              code.isEmpty ||
-                              creditsStr.isEmpty) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  "Code, name and credits are required",
+                            if (name.isEmpty ||
+                                code.isEmpty ||
+                                creditsStr.isEmpty) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    "Code, name and credits are required",
+                                  ),
                                 ),
-                              ),
+                              );
+                              return;
+                            }
+
+                            final credits = double.tryParse(creditsStr) ?? 0;
+                            if (credits <= 0) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text("Credits must be > 0"),
+                                ),
+                              );
+                              return;
+                            }
+
+                            await calcController.addSubject(
+                              name: name,
+                              code: code,
+                              credits: credits,
+                              semester: semester,
+                              grade: grade.isEmpty ? "" : grade,
                             );
-                            return;
-                          }
 
-                          final credits = double.tryParse(creditsStr) ?? 0;
-                          if (credits <= 0) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text("Credits must be > 0"),
-                              ),
-                            );
-                            return;
-                          }
-
-                          await calcController.addSubject(
-                            name: name,
-                            code: code,
-                            credits: credits,
-                            semester: semester,
-                            grade: grade.isEmpty ? "" : grade,
-                          );
-
-                          if (context.mounted) Navigator.of(ctx).pop();
-                        },
-                        child: Padding(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 6,
+                            if (context.mounted) Navigator.of(ctx).pop();
+                          },
+                          
+                          child: Padding(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            child: Text(
+                              "Save",
+                              style: TextStyle(color: palette.accent),
+                            ),
                           ),
-                          child: Text(
-                            "Save",
-                            style: TextStyle(color: palette.accent),
-                          ),
-                        ),
-                      ),
+                        );
+                      })
                     ],
                   ),
                 ],
