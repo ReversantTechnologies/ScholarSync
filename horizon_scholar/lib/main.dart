@@ -5,6 +5,7 @@ import 'package:horizon_scholar/controllers/internal_calc_controller.dart';
 import 'package:horizon_scholar/models/internal_gpa_model.dart';
 import 'package:horizon_scholar/models/internal_mark_model.dart';
 import 'package:horizon_scholar/models/internal_model.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 // MODELS
 
@@ -26,6 +27,7 @@ import 'routes/app_routes.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Hive.initFlutter();
+  await MobileAds.instance.initialize();
   Hive.registerAdapter(CgpaModelAdapter());
   Hive.registerAdapter(DocumentModelAdapter());
   Hive.registerAdapter(CourseModelAdapter());

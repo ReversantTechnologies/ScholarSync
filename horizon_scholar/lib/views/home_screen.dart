@@ -4,7 +4,8 @@ import 'package:get/get.dart';
 import '../controllers/cgpa_controller.dart';
 import '../controllers/course_controller.dart';
 import '../controllers/document_controller.dart';
-import '../controllers/theme_controller.dart'; 
+import '../controllers/theme_controller.dart';
+import '../widgets/banner_ad_widget.dart'; 
 // import '../screens/cgpa_screen.dart';
 // import '../screens/course_screen.dart';
 // import '../screens/vault_screen.dart';
@@ -236,6 +237,21 @@ class HomeScreen extends StatelessWidget {
                 ),
 
                 const SizedBox(height: 26),
+
+                Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    decoration: BoxDecoration(
+                      color: palette.black.withAlpha(5),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const BannerAdWidget(),
+                  ),
+                ),
+
+                const SizedBox(height: 26),
+
+
 
                 // QUICK ACTIONS TITLE
                 Row(
